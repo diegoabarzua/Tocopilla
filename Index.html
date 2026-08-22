@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Estado de Ruta · Antofagasta - Iquique</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<style>
+  :root {
+    --bg: #1B1815;
+    --surface: #221E19;
+    --surface-2: #2C2720;
+    --border: #3A3327;
+    --text: #F3EEE4;
+    --text-dim: #A89C89;
+    --accent: #3E7259;
+    --accent-strong: #57A17E;
+    --red: #D14A34;
+    --red-deep: #A83A29;
+    --yellow: #E4A73B;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    overscroll-behavior: none;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "Cascadia Code", "Roboto Mono", monospace; }
+  button, input, textarea { font-family: inherit; }
+  button:focus-visible, input:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent-strong);
+    outline-offset: 2px;
+  }
+
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
+
+  header {
+    background: var(--surface);
+    padding: 12px 16px 11px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .eyebrow {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; font-weight: 700; letter-spacing: 1.3px;
+    color: var(--accent-strong); text-transform: uppercase;
+    margin-bottom: 5px;
+  }
+  .live-dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent-strong); flex-shrink: 0;
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .live-dot { animation: pulse 2.2s ease-in-out infinite; }
+  }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(87,161,126,0.55); }
+    50% { box-shadow: 0 0 0 5px rgba(87,161,126,0); }
+  }
+  header h1 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: 0.2px; }
+  header .subtitle {
+    margin: 2px 0 0; font-size: 12px; font-weight: 600; color: var(--text-dim);
+    letter-spacing: 0.8px; text-transform: uppercase;
+  }
+
+  #legend {
+    display: flex; align-items: center; gap: 14px;
+    padding: 9px 16px; background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    font-size: 12.5px; flex-shrink: 0; flex-wrap: wrap;
+  }
+  .legend-item { display: flex; align-items: center; gap: 7px; }
+  .legend-swatch { width: 13px; height: 13px; border-radius: 4px; flex-shrink: 0; border: 1.5px solid rgba(0,0,0,0.35); }
+  .legend-swatch.red { background: var(--red); }
+  .legend-swatch.yellow { background: var(--yellow); }
+  .legend-count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+  #last-updated { margin-left: auto; color: var(--text-dim); font-size: 10.5px; }
+
+  #map-wrap { position: relative; flex: 1; min-height: 0; }
+  #map { width: 100%; height: 100%; background: #14120f; }
+  .custom-marker-icon { background: none; border: none; }
+  .leaflet-container { font-family: inherit; }
+
+  .icon-btn {
+    position: absolute; z-index: 500;
+    background: var(--surface); color: var(--text);
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 9px 12px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; display: flex; align-items: center; gap: 6px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.35);
+  }
+  .icon-btn:active { transform: scale(0.97); }
+  #refresh-btn { top: 14px; right: 14px; }
+
+  .fab {
+    position: absolute; right: 14px; bottom: 20px; z-index: 500;
+    background: var(--accent); color: #0d1410;
+    border: none; border-radius: 12px;
+    padding: 14px 18px; font-size: 14px; font-weight: 800;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45);
+    display: flex; align-items: center; gap: 7px;
+    cursor: pointer;
+  }
+  .fab:active { transform: scale(0.96); }
+
+  .placing-banner {
+    position: absolute; top: 14px; left: 14px; right: 14px; z-index: 500;
+    background: var(--accent-strong); color: #0a1410;
+    padding: 11px 14px; border-radius: 11px;
+    font-size: 13px; font-weight: 700;
+    display: none; align-items: center; justify-content: space-between; gap: 10px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+  }
+  .placing-banner button {
+    background: rgba(10,20,16,0.22); border: none; color: inherit;
+    font-weight: 800; padding: 6px 10px; border-radius: 7px;
+    font-size: 12px; cursor: pointer; flex-shrink: 0;
+  }
+  #map-wrap.placing #map { cursor: crosshair; }
+  #map-wrap.placing #refresh-btn,
+  #map-wrap.placing .fab { display: none; }
+
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(10,8,6,0.72);
+    z-index: 1000; display: none; align-items: flex-end; justify-content: center;
+  }
+  .modal-overlay.show { display: flex; }
+  @media (min-width: 640px) { .modal-overlay { align-items: center; } }
+
+  .modal-sheet {
+    background: var(--surface); width: 100%; max-width: 420px;
+    border-radius: 18px 18px 0 0;
+    padding: 20px 20px calc(20px + env(safe-area-inset-bottom, 0px));
+    border: 1px solid var(--border); border-bottom: none;
+  }
+  @media (min-width: 640px) {
+    .modal-sheet { border-radius: 16px; border-bottom: 1px solid var(--border); margin-bottom: 10vh; }
+  }
+  .modal-sheet h2 { margin: 0 0 14px; font-size: 15px; font-weight: 800; }
+
+  .modal-sheet input[type="password"], .modal-sheet textarea {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text); padding: 12px; border-radius: 9px;
+    font-size: 15px; margin-bottom: 10px;
+  }
+  .modal-sheet textarea { resize: vertical; min-height: 64px; }
+  .modal-error {
+    color: var(--red); font-size: 12.5px; margin: -4px 0 10px; display: none; font-weight: 600;
+  }
+  .modal-actions { display: flex; gap: 10px; margin-top: 4px; }
+  .btn {
+    flex: 1; padding: 12px; border-radius: 9px; border: none;
+    font-size: 14px; font-weight: 800; cursor: pointer;
+  }
+  .btn-primary { background: var(--accent); color: #0d1410; }
+  .btn-secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--border); }
+
+  .type-select { display: flex; gap: 10px; margin-bottom: 14px; }
+  .type-btn {
+    flex: 1; padding: 14px 8px; border-radius: 11px; border: 2px solid var(--border);
+    background: var(--surface-2); color: var(--text); font-size: 13px; font-weight: 700;
+    cursor: pointer; display: flex; flex-direction: column; align-items: center; gap: 7px;
+  }
+  .type-btn .swatch { width: 20px; height: 20px; border-radius: 5px; }
+  .type-btn.selected { border-color: var(--accent-strong); background: rgba(87,161,126,0.14); }
+
+  .leaflet-popup-content-wrapper { background: var(--surface); color: var(--text); border-radius: 11px; }
+  .leaflet-popup-tip { background: var(--surface); }
+  .leaflet-popup-close-button { color: var(--text-dim) !important; }
+  .marker-popup { min-width: 175px; font-size: 13px; }
+  .popup-type {
+    font-weight: 800; margin-bottom: 5px; font-size: 12.5px;
+    letter-spacing: 0.4px; text-transform: uppercase;
+  }
+  .popup-type-total { color: var(--red); }
+  .popup-type-parcial { color: var(--yellow); }
+  .popup-note { color: var(--text); margin: 4px 0; font-size: 12.5px; line-height: 1.4; }
+  .popup-date { color: var(--text-dim); font-size: 10.5px; margin: 5px 0 9px; }
+  .popup-delete-btn {
+    background: var(--red-deep); color: #fff; border: none;
+    padding: 8px 10px; border-radius: 8px; font-size: 12px; font-weight: 700;
+    cursor: pointer; width: 100%;
+  }
+
+  .toast {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--surface); border: 1px solid var(--border); color: var(--text);
+    padding: 10px 16px; border-radius: 9px; font-size: 12.5px; z-index: 1100;
+    opacity: 0; pointer-events: none; transition: opacity 0.25s;
+    max-width: 88%; text-align: center; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="eyebrow"><span class="live-dot"></span>Monitoreo compartido</div>
+    <h1>Estado de Ruta</h1>
+    <p class="subtitle">Antofagasta — Iquique</p>
+  </header>
+  <div id="legend">
+    <div class="legend-item"><span class="legend-swatch red"></span>Corte total de ruta <span class="legend-count" id="count-total">(0)</span></div>
+    <div class="legend-item"><span class="legend-swatch yellow"></span>Corte parcial <span class="legend-count" id="count-parcial">(0)</span></div>
+    <div id="last-updated" class="mono"></div>
+  </div>
+  <div id="map-wrap">
+    <div id="map"></div>
+    <button class="icon-btn" id="refresh-btn">⟳ Actualizar</button>
+    <div class="placing-banner" id="placing-banner">
+      <span>Toca el mapa donde ocurre el corte</span>
+      <button id="cancel-placing">Cancelar</button>
+    </div>
+    <button class="fab" id="fab-add">＋ Agregar corte</button>
+    <div class="toast" id="toast"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="password-modal">
+  <div class="modal-sheet">
+    <h2 id="password-modal-title">Ingresa la contraseña</h2>
+    <input type="password" id="password-input" placeholder="Contraseña" autocomplete="off" />
+    <p class="modal-error" id="password-error">Contraseña incorrecta</p>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="password-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="password-confirm">Confirmar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="add-modal">
+  <div class="modal-sheet">
+    <h2>Nuevo corte</h2>
+    <div class="type-select">
+      <button class="type-btn" data-type="total"><span class="swatch" style="background:#D14A34"></span>Corte total</button>
+      <button class="type-btn" data-type="parcial"><span class="swatch" style="background:#E4A73B"></span>Corte parcial</button>
+    </div>
+    <textarea id="note-input" placeholder="Detalle (opcional): ej. Km 45, socavón en calzada" maxlength="200"></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" id="add-cancel">Cancelar</button>
+      <button class="btn btn-primary" id="add-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+(function () {
+  'use strict';
+
+  var PASSWORD_HASH = '5659985feba9f7baedd65e79da1f74e0ef298b5d4806c42bd82dbda38569cc74';
+  var STORAGE_KEY = 'road-closure-markers';
+
+  var initialBounds = L.latLngBounds([-24.1, -71.0], [-19.7, -69.15]);
+  var maxBounds = L.latLngBounds([-24.9, -71.6], [-19.0, -68.3]);
+
+  var map = L.map('map', {
+    minZoom: 6,
+    maxZoom: 18,
+    maxBounds: maxBounds,
+    maxBoundsViscosity: 0.6,
+    zoomControl: false,
+    attributionControl: false
+  });
+  L.control.attribution({ position: 'bottomleft' }).addTo(map);
+
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    attribution: 'Tiles &copy; Esri, Maxar, Earthstar Geographics',
+    maxZoom: 18, minZoom: 6
+  }).addTo(map);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 18, minZoom: 6
+  }).addTo(map);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}', {
+    maxZoom: 18, minZoom: 6
+  }).addTo(map);
+
+  map.fitBounds(initialBounds);
+
+  var mapWrap = document.getElementById('map-wrap');
+  var markersLayer = L.layerGroup().addTo(map);
+
+  var isAuthenticated = false;
+  var placingMode = false;
+  var pendingLatLng = null;
+  var popupOpenCount = 0;
+  var authResolve = null;
+  var selectedType = null;
+
+  map.on('popupopen', function () { popupOpenCount++; });
+  map.on('popupclose', function () { popupOpenCount = Math.max(0, popupOpenCount - 1); });
+
+  function escapeHtml(str) {
+    var div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function showToast(msg) {
+    var t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.add('show');
+    setTimeout(function () { t.classList.remove('show'); }, 2400);
+  }
+
+  function sha256(text) {
+    var enc = new TextEncoder().encode(text);
+    return crypto.subtle.digest('SHA-256', enc).then(function (buf) {
+      return Array.from(new Uint8Array(buf)).map(function (b) {
+        return b.toString(16).padStart(2, '0');
+      }).join('');
+    });
+  }
+
+  function createIcon(type) {
+    var color = type === 'total' ? '#D14A34' : '#E4A73B';
+    var html = '<svg width="26" height="34" viewBox="0 0 26 34" xmlns="http://www.w3.org/2000/svg">' +
+      '<rect x="1" y="1" width="24" height="20" rx="5" fill="' + color + '" stroke="#1B1815" stroke-width="1.5"/>' +
+      '<path d="M10 20.5 L13 31 L16 20.5 Z" fill="' + color + '" stroke="#1B1815" stroke-width="1.5" stroke-linejoin="round"/>' +
+      '</svg>';
+    return L.divIcon({ html: html, className: 'custom-marker-icon', iconSize: [26, 34], iconAnchor: [13, 33], popupAnchor: [0, -30] });
+  }
+
+  function formatDate(iso) {
+    try {
+      return new Date(iso).toLocaleString('es-CL', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    } catch (e) { return ''; }
+  }
+
+  function loadMarkersFromStorage() {
+    return window.storage.get(STORAGE_KEY, true).then(function (res) {
+      if (res && res.value) return JSON.parse(res.value);
+      return [];
+    }).catch(function () { return []; });
+  }
+
+  function saveMarkersToStorage(markers) {
+    return window.storage.set(STORAGE_KEY, JSON.stringify(markers), true).then(function (res) {
+      return !!res;
+    }).catch(function () { return false; });
+  }
+
+  function updateCounts(data) {
+    document.getElementById('count-total').textContent = '(' + data.filter(function (m) { return m.type === 'total'; }).length + ')';
+    document.getElementById('count-parcial').textContent = '(' + data.filter(function (m) { return m.type === 'parcial'; }).length + ')';
+  }
+
+  function renderMarkers(data) {
+    if (popupOpenCount > 0) return;
+    markersLayer.clearLayers();
+    data.forEach(function (m) {
+      var marker = L.marker([m.lat, m.lng], { icon: createIcon(m.type) });
+      var typeLabel = m.type === 'total' ? 'Corte total de ruta' : 'Corte parcial';
+      var noteHtml = m.note ? '<p class="popup-note">' + escapeHtml(m.note) + '</p>' : '';
+      var html = '<div class="marker-popup">' +
+        '<div class="popup-type popup-type-' + m.type + '">' + typeLabel + '</div>' +
+        noteHtml +
+        '<div class="popup-date">' + formatDate(m.timestamp) + '</div>' +
+        '<button class="popup-delete-btn" data-id="' + m.id + '">Eliminar</button>' +
+        '</div>';
+      marker.bindPopup(html);
+      marker.on('popupopen', function () {
+        var btn = document.querySelector('.popup-delete-btn[data-id="' + m.id + '"]');
+        if (btn) btn.onclick = function () { handleDeleteRequest(m.id); };
+      });
+      marker.addTo(markersLayer);
+    });
+    updateCounts(data);
+  }
+
+  function refreshMarkers() {
+    return loadMarkersFromStorage().then(function (data) {
+      renderMarkers(data);
+      var el = document.getElementById('last-updated');
+      if (el) el.textContent = new Date().toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+      return data;
+    });
+  }
+
+  function requestPassword(title) {
+    return new Promise(function (resolve) {
+      var modal = document.getElementById('password-modal');
+      document.getElementById('password-modal-title').textContent = title || 'Ingresa la contraseña';
+      document.getElementById('password-input').value = '';
+      var errEl = document.getElementById('password-error');
+      errEl.textContent = 'Contraseña incorrecta';
+      errEl.style.display = 'none';
+      modal.classList.add('show');
+      setTimeout(function () { document.getElementById('password-input').focus(); }, 50);
+      authResolve = resolve;
+    });
+  }
+
+  function ensureAuthenticated(actionLabel) {
+    if (isAuthenticated) return Promise.resolve(true);
+    return requestPassword('Contraseña para ' + actionLabel);
+  }
+
+  document.getElementById('password-confirm').onclick = function () {
+    var val = document.getElementById('password-input').value;
+    sha256(val.trim()).then(function (hash) {
+      if (hash === PASSWORD_HASH) {
+        isAuthenticated = true;
+        document.getElementById('password-modal').classList.remove('show');
+        if (authResolve) authResolve(true);
+      } else {
+        document.getElementById('password-error').style.display = 'block';
+      }
+    }).catch(function () {
+      var errEl = document.getElementById('password-error');
+      errEl.textContent = 'Error al verificar. Intenta de nuevo.';
+      errEl.style.display = 'block';
+    });
+  };
+  document.getElementById('password-cancel').onclick = function () {
+    document.getElementById('password-modal').classList.remove('show');
+    if (authResolve) authResolve(false);
+  };
+  document.getElementById('password-input').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') document.getElementById('password-confirm').click();
+  });
+
+  document.getElementById('fab-add').onclick = function () {
+    ensureAuthenticated('agregar un corte').then(function (ok) {
+      if (ok) enterPlacingMode();
+    });
+  };
+
+  function enterPlacingMode() {
+    placingMode = true;
+    mapWrap.classList.add('placing');
+    document.getElementById('placing-banner').style.display = 'flex';
+  }
+  function exitPlacingMode() {
+    placingMode = false;
+    mapWrap.classList.remove('placing');
+    document.getElementById('placing-banner').style.display = 'none';
+  }
+  document.getElementById('cancel-placing').onclick = exitPlacingMode;
+
+  map.on('click', function (e) {
+    if (!placingMode) return;
+    pendingLatLng = e.latlng;
+    exitPlacingMode();
+    openAddForm();
+  });
+
+  function openAddForm() {
+    selectedType = null;
+    document.querySelectorAll('.type-btn').forEach(function (b) { b.classList.remove('selected'); });
+    document.getElementById('note-input').value = '';
+    document.getElementById('add-modal').classList.add('show');
+  }
+  document.querySelectorAll('.type-btn').forEach(function (btn) {
+    btn.onclick = function () {
+      document.querySelectorAll('.type-btn').forEach(function (b) { b.classList.remove('selected'); });
+      btn.classList.add('selected');
+      selectedType = btn.dataset.type;
+    };
+  });
+  document.getElementById('add-cancel').onclick = function () {
+    document.getElementById('add-modal').classList.remove('show');
+    pendingLatLng = null;
+  };
+  document.getElementById('add-save').onclick = function () {
+    if (!selectedType || !pendingLatLng) {
+      showToast('Selecciona el tipo de corte');
+      return;
+    }
+    var note = document.getElementById('note-input').value.trim().slice(0, 200);
+    var newMarker = {
+      id: 'm_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8),
+      lat: pendingLatLng.lat,
+      lng: pendingLatLng.lng,
+      type: selectedType,
+      note: note,
+      timestamp: new Date().toISOString()
+    };
+    document.getElementById('add-modal').classList.remove('show');
+    var placedAt = pendingLatLng;
+    pendingLatLng = null;
+    loadMarkersFromStorage().then(function (current) {
+      current.push(newMarker);
+      return saveMarkersToStorage(current).then(function (saved) {
+        if (saved) {
+          renderMarkers(current);
+          showToast('Corte agregado');
+        } else {
+          showToast('No se pudo guardar. Intenta de nuevo.');
+        }
+      });
+    });
+  };
+
+  function handleDeleteRequest(id) {
+    map.closePopup();
+    ensureAuthenticated('eliminar un corte').then(function (ok) {
+      if (!ok) return;
+      loadMarkersFromStorage().then(function (current) {
+        var updated = current.filter(function (m) { return m.id !== id; });
+        return saveMarkersToStorage(updated).then(function (saved) {
+          if (saved) {
+            renderMarkers(updated);
+            showToast('Corte eliminado');
+          } else {
+            showToast('No se pudo eliminar. Intenta de nuevo.');
+          }
+        });
+      });
+    });
+  }
+
+  document.getElementById('refresh-btn').onclick = function () { refreshMarkers(); };
+  setInterval(refreshMarkers, 30000);
+
+  refreshMarkers();
+})();
+</script>
+</body>
+</html>
